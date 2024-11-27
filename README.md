@@ -1,3 +1,3 @@
-# saikitz
+# saiKitz
 
-Describe your project here.
+saiKitz: Sidney Zhang's Toolkit for AI Conversations & Info Queries.
