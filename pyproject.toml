@@ -1,6 +1,6 @@
 [project]
 name = "saikitz"
-version = "0.1.1"
+version = "0.1.2"
 description = "saiKitz: Sidney Zhang's Toolkit for AI Conversations & Info Queries"
 authors = [
     { name = "Sidney Zhang", email = "liangyi@me.com" }
