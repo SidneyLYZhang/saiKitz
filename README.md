@@ -56,6 +56,14 @@ max_dialogue_turns : int ，默认为20，最大历史对话轮次，超过则�
 如果你不想使用默认模型，请使用 `chatbot.set_model(model_name)` 方法修改。
 同样，对于默认的系统提示，也可以通过 `chatbot.set_system_prompt(prompt)` 来修改。
 
+目前自带的系统提示有五种：
+
+- default ： 默认的提示，很简单，适应绝大多数使用情况。
+- langPrompt ： 更复杂的智能助理提示。可以帮助用户完成更复杂的任务。
+- chi ： 纯中文助理，对于非国产LLM比较有用。
+- runse ： 文本润色。
+- trans ： 语言翻译。
+
 ### 3.其他说明
 
 1. 使用Kimi的搜索工具会带来较大的TPM，如果账号还未充值，可能会出现超TPM的错误返回信息。

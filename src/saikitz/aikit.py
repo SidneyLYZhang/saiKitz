@@ -40,7 +40,7 @@ class aiSearcher(object) :
             case "ollama" :
                 self.__channel = "ollama"
                 self.__model = "llama3.2:latest"
-                url = 'https://127.0.0.1:11434/v1'
+                url = 'http://127.0.0.1:11434/v1'
             case None :
                 self.__channel = "kimi"
                 self.__model = "moonshot-v1-auto"
@@ -66,7 +66,7 @@ class aiSearcher(object) :
         self.__max_history = max_dialogue_turns
         self.__turns = 0
         if system_prompt is None :
-            prompt = (KEYPLACE/"prompts/sysprompt.txt").read_text(encoding="utf-8")
+            prompt = "你是一个机智的智能信息助理，名叫 saikitz。可以帮助用户回答问题，查询资料。"
         else :
             prompt = system_prompt
         self.__system_prompt = {"role": "system", "content": prompt}
@@ -77,7 +77,7 @@ class aiSearcher(object) :
         """
         设置系统提示语
         system_prompt : str|Path ，支持两种方式：
-                                    1.固定系统设定：default、chi；
+                                    1.固定系统设定：default、langPrompt、chi、runse、trans；
                                     2.直接输入。
         其中：
         default : 默认提示语，专业的信息检索人员。
@@ -87,10 +87,16 @@ class aiSearcher(object) :
             prompt = system_prompt.read_text(encoding="utf-8")
         else:
             match system_prompt:
-                case "default":
+                case "default" :
+                    prompt = "你是一个机智的智能信息助理，名叫 saikitz。可以帮助用户回答问题，查询资料。"
+                case "longPrompt":
                     prompt = (KEYPLACE/"prompts/sysprompt.txt").read_text(encoding="utf-8")
                 case "chi" :
                     prompt = (KEYPLACE/"prompts/chiprompt.txt").read_text(encoding="utf-8")
+                case "runse" :
+                    prompt = (KEYPLACE/"prompts/opmprompt.txt").read_text(encoding="utf-8")
+                case "trans" :
+                    prompt = (KEYPLACE/"prompts/transprompt.txt").read_text(encoding="utf-8")
                 case _ :
                     prompt = system_prompt
         self.__system_prompt = {"role": "system", "content": prompt}
@@ -141,10 +147,23 @@ class aiSearcher(object) :
             print("Not supported yet!")
         if file_content is not None :
             self.__history.append({"role": "system", "content": file_content})
+    def _get_max_token(self, input:str|int) -> int :
+        if isinstance(input,int) :
+            return input
+        else :
+            match input:
+                case "auto":
+                    return 1024
+                case "long":
+                    return 4096
+                case "max" :
+                    return 8192
+                case _ :
+                    raise ValueError("Undefined Metrics!")
     def chat(self, message:str, 
              temperature:float = 0.3,
              top_p:float = 1.0,
-             max_tokens:int = 65536,
+             max_tokens:int|str = "auto",
              file:Path|str|None = None,
              show:bool = True) -> str|None :
         if self.__model is None :
@@ -155,7 +174,8 @@ class aiSearcher(object) :
         self.__history.append({"role": "user", "content": message})
         finished = None
         while finished is None or finished == "tool_calls":
-            choice = self._calling(temperature, top_p, max_tokens)
+            choice = self._calling(temperature, top_p, 
+                                   self._get_max_token(max_tokens))
             finished = choice.finish_reason
             if finished == "tool_calls":
                 self.__history.append(choice.message)
@@ -178,6 +198,7 @@ class aiSearcher(object) :
         else :
             result = choice.message.content
         self.__history.append({"role": "assistant","content": result})
+        self.__turns += 1
         if show :
             printmd(result)
         else :
