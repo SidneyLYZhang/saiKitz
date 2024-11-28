@@ -5,6 +5,8 @@ import json
 
 from saikitz.utils import printmd,lastoflistdict
 
+KEYPLACE = Path(__file__).absolute().parent
+
 class aiSearcher(object) :
     __all__ = ["chat","set_system_prompt","set_model"]
     def __init__(self, api_key:str|Path|None = None, 
@@ -64,7 +66,7 @@ class aiSearcher(object) :
         self.__max_history = max_dialogue_turns
         self.__turns = 0
         if system_prompt is None :
-            prompt = Path("./prompts/sysprompt.txt").read_text(encoding="utf-8")
+            prompt = (KEYPLACE/"prompts/sysprompt.txt").read_text(encoding="utf-8")
         else :
             prompt = system_prompt
         self.__system_prompt = {"role": "system", "content": prompt}
@@ -86,9 +88,9 @@ class aiSearcher(object) :
         else:
             match system_prompt:
                 case "default":
-                    prompt = Path("./prompts/sysprompt.txt").read_text(encoding="utf-8")
+                    prompt = (KEYPLACE/"prompts/sysprompt.txt").read_text(encoding="utf-8")
                 case "chi" :
-                    prompt = Path("./prompts/chiprompt.txt").read_text(encoding="utf-8")
+                    prompt = (KEYPLACE/"prompts/chiprompt.txt").read_text(encoding="utf-8")
                 case _ :
                     prompt = system_prompt
         self.__system_prompt = {"role": "system", "content": prompt}
