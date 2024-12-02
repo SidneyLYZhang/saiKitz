@@ -7,6 +7,8 @@ from saikitz.utils import printmd,lastoflistdict
 
 KEYPLACE = Path(__file__).absolute().parent
 
+DEFAULT_PROMPT = """你是一个机智的智能信息助理，名叫 saikitz。可以帮助用户回答问题，查询资料。"""
+
 class aiSearcher(object) :
     __all__ = ["chat","set_system_prompt","set_model"]
     def __init__(self, api_key:str|Path|None = None, 
@@ -40,7 +42,7 @@ class aiSearcher(object) :
             case "ollama" :
                 self.__channel = "ollama"
                 self.__model = "llama3.2:latest"
-                url = 'http://127.0.0.1:11434/v1'
+                url = 'http://localhost:11434'
             case None :
                 self.__channel = "kimi"
                 self.__model = "moonshot-v1-auto"
@@ -66,7 +68,7 @@ class aiSearcher(object) :
         self.__max_history = max_dialogue_turns
         self.__turns = 0
         if system_prompt is None :
-            prompt = "你是一个机智的智能信息助理，名叫 saikitz。可以帮助用户回答问题，查询资料。"
+            prompt = DEFAULT_PROMPT
         else :
             prompt = system_prompt
         self.__system_prompt = {"role": "system", "content": prompt}
@@ -88,7 +90,7 @@ class aiSearcher(object) :
         else:
             match system_prompt:
                 case "default" :
-                    prompt = "你是一个机智的智能信息助理，名叫 saikitz。可以帮助用户回答问题，查询资料。"
+                    prompt = DEFAULT_PROMPT
                 case "longPrompt":
                     prompt = (KEYPLACE/"prompts/sysprompt.txt").read_text(encoding="utf-8")
                 case "chi" :
@@ -159,7 +161,7 @@ class aiSearcher(object) :
                 case "max" :
                     return 8192
                 case _ :
-                    raise ValueError("Undefined Metrics!")
+                    raise ValueError("Undefined Names!")
     def chat(self, message:str, 
              temperature:float = 0.3,
              top_p:float = 1.0,
