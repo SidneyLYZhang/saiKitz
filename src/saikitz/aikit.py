@@ -109,26 +109,54 @@ class aiSearcher(object) :
     def set_model(self, model:str) -> None :
         """使用自定义API链接时才需要先设定所需模型"""
         self.__model = model
-    def _chat_create(self, model, messages,temp,maxtn, topp, tools, stream) :
+    def _chat_create(self, model,messages,temp,maxtn,topp,tools) :
         if self.__channel == "ollama" :
-            return self.__client.chat(model=model,
+            caht_info = self.__client.chat(model=model,
                 message=messages, temperature=temp, max_token=maxtn,
-                top_p=topp, stream=stream, tools=tools)
+                top_p=topp, stream=False, tools=tools)
+            output = ""
+            for i in caht_info :
+                tmpx = json.loads(i)["message"]
+                if "tool_calls" in tmpx.keys():
+                    return {"role":"tool","tool_calls":tmpx["tool_calls"]}
+                else :
+                    output += json.loads(i)["message"]["content"]
+            return {"role":"assistant","content":output}
         else :
-            return self.__client.chat.completions.create(
+            caht_info = self.__client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temp, max_tokens=maxtn,
-                top_p=topp, tools=tools, stream=stream)
+                top_p=topp, tools=tools)
+            output = ''
+            while caht_info.choices[0].finish_reason == "length":
+                output += caht_info.choices[0].message.content
+                self.__history.append({"role": "assistant", "content": output, "partial": True})
+                caht_info = self.__client.chat.completions.create(
+                            model=model,
+                            messages=messages,
+                            temperature=temp, max_tokens=maxtn,
+                            top_p=topp, tools=tools)
+            self.__prefix = output
+            return caht_info.choices[0]
     def _optimizing_history_(self) -> None :
         if self.__max_history > 0 :
             if self.__max_history == 1 :
                 self.__history = [self.__system_prompt]
-            elif self.__turns > self.__max_history and self.__max_history <= 4 :
-                ind = lastoflistdict(self.__history, "role", "user")
-                self.__history = [self.__system_prompt] + self.__history[ind:]
+            elif self.__max_history <= 4 :
+                if self.__turns > self.__max_history :
+                    ind = lastoflistdict(self.__history, "role", "user")
+                    self.__history = [self.__system_prompt] + self.__history[ind:]
             else :
-                pass
+                self.__history.append({"role": "user", 
+                                       "content": "请总结之前所有对话的主要信息，并以'之前对话主要内容为：'开头。"})
+                chatres = self._chat_create(self.__model,self.__history,
+                                            0.7,2048,1,NOT_GIVEN)
+                summ = chatres["content"] if self.__channel == "ollama" else chatres.message.content
+                self.__history = [
+                    self.__system_prompt,
+                    {"role": "assistant", "content": summ}
+                ]
     def _calling(self, tem, topp, maxtn) :
         if self.__channel == "kimi" and self.__useTools:
             tools = [
@@ -141,20 +169,8 @@ class aiSearcher(object) :
             ]
         else:
             tools = NOT_GIVEN
-        completion = self.__client.chat.completions.create(
-                model=self.__model,
-                messages=self.__history,
-                temperature=tem, max_tokens=maxtn,
-                top_p=topp, tools=tools)
-        if completion.choices[0].finish_reason == "length":
-            self.__prefix = self.__prefix + completion.choices[0].message.content
-            self.__history.append({"role": "assistant", "content": self.__prefix, "partial": True})
-            completion = self.__client.chat.completions.create(
-                        model=self.__model,
-                        messages=self.__history,
-                        temperature=tem, max_tokens=maxtn,
-                        top_p=topp, tools=tools)
-        return completion.choices[0]
+        completion = self._chat_create(self.__model,self.__history,tem,maxtn,topp,tools)
+        return completion
     def _useFile(self,tfile:Path) -> None :
         file_object = self.__client.files.create(file=tfile, 
                                                  purpose="file-extract")
@@ -196,27 +212,33 @@ class aiSearcher(object) :
         while finished is None or finished == "tool_calls":
             choice = self._calling(temperature, top_p, 
                                    self._get_max_token(max_tokens))
-            finished = choice.finish_reason
+            if self.__channel == "ollama" :
+                finished = "tool_calls" if "tool_calls" in choice.message.keys() else None
+            else :
+                finished = choice.finish_reason
             if finished == "tool_calls":
-                self.__history.append(choice.message)
-                for tool_call in choice.message.tool_calls:
-                    tool_call_name = tool_call.function.name
-                    tool_call_arguments = json.loads(tool_call.function.arguments)
-                    if tool_call_name == "$web_search":
-                        tool_result = tool_call_arguments
-                    else:
-                        tool_result = f"Error: unable to find tool by name '{tool_call_name}'"
-                    self.__history.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call_name,
-                        "content": json.dumps(tool_result),
-                    })
+                if self.__channel == "ollama" :
+                    self.__history.append(choice)
+                else :
+                    self.__history.append(choice.message)
+                    for tool_call in choice.message.tool_calls:
+                        tool_call_name = tool_call.function.name
+                        tool_call_arguments = json.loads(tool_call.function.arguments)
+                        if tool_call_name == "$web_search":
+                            tool_result = tool_call_arguments
+                        else:
+                            tool_result = f"Error: unable to find tool by name '{tool_call_name}'"
+                        self.__history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call_name,
+                            "content": json.dumps(tool_result),
+                        })
         if self.__prefix != "" :
             result = self.__prefix + choice.message.content
             self.__prefix = ""
         else :
-            result = choice.message.content
+            result = choice["content"] if self.__channel == "ollama" else  choice.message.content
         self.__history.append({"role": "assistant","content": result})
         self.__turns += 1
         if show :
