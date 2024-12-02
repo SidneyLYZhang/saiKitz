@@ -1,7 +1,10 @@
 import saikitz.utils as utils
-import saikitz.aikit as aikit
+
+from saikitz.aikit import aiSearcher
+from saikitz._chatollama import ollamachat
 
 __all__ = [
     "utils",
-    "aikit"
+    "aiSearcher",
+    "ollamachat"
 ]

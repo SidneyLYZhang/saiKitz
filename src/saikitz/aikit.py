@@ -4,6 +4,7 @@ import os
 import json
 
 from saikitz.utils import printmd,lastoflistdict
+from saikitz._chatollama import ollamachat
 
 KEYPLACE = Path(__file__).absolute().parent
 
@@ -62,6 +63,8 @@ class aiSearcher(object) :
             aikey = api_key.read_text()
         else :
             aikey = api_key
+        if self.__channel == "ollama" :
+            self.__client = ollamachat()
         self.__client = OpenAI(
             api_key = aikey,
             base_url = url,)
@@ -106,11 +109,26 @@ class aiSearcher(object) :
     def set_model(self, model:str) -> None :
         """使用自定义API链接时才需要先设定所需模型"""
         self.__model = model
+    def _chat_create(self, model, messages,temp,maxtn, topp, tools, stream) :
+        if self.__channel == "ollama" :
+            return self.__client.chat(model=model,
+                message=messages, temperature=temp, max_token=maxtn,
+                top_p=topp, stream=stream, tools=tools)
+        else :
+            return self.__client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temp, max_tokens=maxtn,
+                top_p=topp, tools=tools, stream=stream)
     def _optimizing_history_(self) -> None :
         if self.__max_history > 0 :
-            if self.__turns > self.__max_history :
+            if self.__max_history == 1 :
+                self.__history = [self.__system_prompt]
+            elif self.__turns > self.__max_history and self.__max_history <= 4 :
                 ind = lastoflistdict(self.__history, "role", "user")
                 self.__history = [self.__system_prompt] + self.__history[ind:]
+            else :
+                pass
     def _calling(self, tem, topp, maxtn) :
         if self.__channel == "kimi" and self.__useTools:
             tools = [
