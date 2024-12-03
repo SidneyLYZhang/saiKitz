@@ -1,4 +1,6 @@
 from openai import OpenAI,NOT_GIVEN
+from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
+from typing import Iterable
 from pathlib import Path
 import os
 import json
@@ -14,7 +16,7 @@ class aiSearcher(object) :
     __all__ = ["chat","set_system_prompt","set_model"]
     def __init__(self, api_key:str|Path|None = None, 
                  base_url:str|None = None,
-                 no_tools:bool= True,
+                 search_web:bool= False,
                  system_prompt:str|Path|None = None,
                  max_dialogue_turns:int = 20) -> None:
         """
@@ -24,7 +26,7 @@ class aiSearcher(object) :
                                                3.直接输入
         base_url : str|None ，支持两种方式：1.指定渠道名：kimi、qwen、ollama
                                            2.自定义url
-        no_tools : bool ，是否使用附加工具，目前只有网络搜索工具。默认为真，即不使用工具。
+        search_web : bool ，是否使用LLM自带的网络搜索工具，默认为False。目前仅有Kimi和qwen有自带网络搜索。
         system_prompt : str ，默认为None，不设置则使用默认prompt
         max_dialogue_turns : int ，默认为20，最大历史对话轮次，超过则删除最旧的记录，设定0或负值，则不删除历史记录
         
@@ -38,7 +40,10 @@ class aiSearcher(object) :
                 url = "https://api.moonshot.cn/v1"
             case "qwen" :
                 self.__channel = "qwen"
-                self.__model = "qwen2.5-72b-instruct"
+                if search_web :
+                    self.__model = "qwen-plus"
+                else:
+                    self.__model = "qwen2.5-72b-instruct"
                 url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
             case "ollama" :
                 self.__channel = "ollama"
@@ -77,7 +82,7 @@ class aiSearcher(object) :
         self.__system_prompt = {"role": "system", "content": prompt}
         self.__history = [self.__system_prompt]
         self.__prefix = ""
-        self.__useTools = not(no_tools)
+        self.__search_web = search_web
     def set_system_prompt(self, system_prompt:str|Path) -> None:
         """
         设置系统提示语
@@ -109,7 +114,7 @@ class aiSearcher(object) :
     def set_model(self, model:str) -> None :
         """使用自定义API链接时才需要先设定所需模型"""
         self.__model = model
-    def _chat_create(self, model,messages,temp,maxtn,topp,tools) :
+    def _chat_create(self, model,messages,temp,maxtn,topp,tools, **kwargs) :
         if self.__channel == "ollama" :
             caht_info = self.__client.chat(model=model,
                 message=messages, temperature=temp, max_token=maxtn,
@@ -127,7 +132,7 @@ class aiSearcher(object) :
                 model=model,
                 messages=messages,
                 temperature=temp, max_tokens=maxtn,
-                top_p=topp, tools=tools)
+                top_p=topp, tools=tools, **kwargs)
             output = ''
             while caht_info.choices[0].finish_reason == "length":
                 output += caht_info.choices[0].message.content
@@ -136,7 +141,7 @@ class aiSearcher(object) :
                             model=model,
                             messages=messages,
                             temperature=temp, max_tokens=maxtn,
-                            top_p=topp, tools=tools)
+                            top_p=topp, tools=tools, **kwargs)
             self.__prefix = output
             return caht_info.choices[0]
     def _optimizing_history_(self) -> None :
@@ -157,19 +162,25 @@ class aiSearcher(object) :
                     self.__system_prompt,
                     {"role": "assistant", "content": summ}
                 ]
-    def _calling(self, tem, topp, maxtn) :
-        if self.__channel == "kimi" and self.__useTools:
-            tools = [
-                {
-                    "type": "builtin_function",
-                    "function": {
-                        "name": "$web_search",
+    def _calling(self, tem, topp, maxtn, ctools) :
+        ot = [] if ctools is NOT_GIVEN else ctools
+        add_args = {}
+        if self.__search_web :
+            if self.__channel == "kimi":
+                tools = [
+                    {
+                        "type": "builtin_function",
+                        "function": {
+                            "name": "$web_search",
+                        },
                     },
-                },
-            ]
+                ] + ot
+            if self.__channel == "qwen" :
+                add_args = {"extra_body":{"enable_search": True}}
+                tools = NOT_GIVEN if ot else ot
         else:
-            tools = NOT_GIVEN
-        completion = self._chat_create(self.__model,self.__history,tem,maxtn,topp,tools)
+            tools = NOT_GIVEN if ot else ot
+        completion = self._chat_create(self.__model,self.__history,tem,maxtn,topp,tools, **add_args)
         return completion
     def _useFile(self,tfile:Path) -> None :
         file_object = self.__client.files.create(file=tfile, 
@@ -200,6 +211,7 @@ class aiSearcher(object) :
              temperature:float = 0.3,
              top_p:float = 1.0,
              max_tokens:int|str = "auto",
+             tools:Iterable[ChatCompletionToolParam]|None = None,
              file:Path|str|None = None,
              show:bool = True) -> str|None :
         if self.__model is None :
@@ -209,14 +221,19 @@ class aiSearcher(object) :
             self._useFile(Path(file))
         self.__history.append({"role": "user", "content": message})
         finished = None
+        calledTools = False
         while finished is None or finished == "tool_calls":
             choice = self._calling(temperature, top_p, 
-                                   self._get_max_token(max_tokens))
+                                   self._get_max_token(max_tokens), tools)
             if self.__channel == "ollama" :
-                finished = "tool_calls" if "tool_calls" in choice.message.keys() else None
+                finished = "tool_calls" if "tool_calls" in choice.message.model_dump().keys() else None
+            if self.__channel == "qwen" :
+                finished = "tool_calls" if choice.message.tool_calls is not None else None
             else :
                 finished = choice.finish_reason
             if finished == "tool_calls":
+                calledTools = True
+                self.__prefix += choice.message.content
                 if self.__channel == "ollama" :
                     self.__history.append(choice)
                 else :
@@ -227,7 +244,7 @@ class aiSearcher(object) :
                         if tool_call_name == "$web_search":
                             tool_result = tool_call_arguments
                         else:
-                            tool_result = f"Error: unable to find tool by name '{tool_call_name}'"
+                            tool_result = eval(tool_call_name)(**tool_call_arguments)
                         self.__history.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -235,7 +252,14 @@ class aiSearcher(object) :
                             "content": json.dumps(tool_result),
                         })
         if self.__prefix != "" :
-            result = self.__prefix + choice.message.content
+            if calledTools :
+                xCatRes = self._chat_create(
+                    self.__model,
+                    {"role":"user","content":"请整理以下语句，是表达更清晰明确：/n{}".format(self.__prefix)},
+                    0.7,2048,1,NOT_GIVEN)
+                result = xCatRes.message.content
+            else :
+                result = self.__prefix + choice.message.content
             self.__prefix = ""
         else :
             result = choice["content"] if self.__channel == "ollama" else  choice.message.content
