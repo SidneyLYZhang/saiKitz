@@ -5,7 +5,7 @@ from pathlib import Path
 import os
 import json
 
-from saikitz.utils import printmd,lastoflistdict
+from saikitz.utils import printmd,lastoflistdict,baseURL_optimize
 from saikitz._chatollama import ollamachat
 
 KEYPLACE = Path(__file__).absolute().parent
@@ -33,30 +33,21 @@ class aiSearcher(object) :
         特别说明：
         1. 使用搜索工具会带来较大的TPM，如果账号初始设立，可能会出现超TPM的错误返回信息。
         """
-        match base_url:
+        url, self.__channel = baseURL_optimize(base_url)
+        match self.__channel :
             case "kimi" :
-                self.__channel = "kimi"
                 self.__model = "moonshot-v1-auto"
-                url = "https://api.moonshot.cn/v1"
             case "qwen" :
-                self.__channel = "qwen"
                 if search_web :
                     self.__model = "qwen-plus"
                 else:
                     self.__model = "qwen2.5-72b-instruct"
-                url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
             case "ollama" :
-                self.__channel = "ollama"
                 self.__model = "llama3.2:latest"
-                url = 'http://localhost:11434'
             case None :
-                self.__channel = "kimi"
                 self.__model = "moonshot-v1-auto"
-                url = "https://api.moonshot.cn/v1"
             case _ :
-                self.__channel = "custom"
                 self.__model = None
-                url = base_url
         if api_key is None :
             if self.__channel == "ollama" :
                 aikey = "ollama"
@@ -65,14 +56,15 @@ class aiSearcher(object) :
             if aikey is None :
                 raise ValueError("AISEARCH_API_KEY is not set!!")
         elif isinstance(api_key, Path) :
-            aikey = api_key.read_text()
+            aikey = api_key.read_text(encoding="utf-8")
         else :
             aikey = api_key
         if self.__channel == "ollama" :
             self.__client = ollamachat()
-        self.__client = OpenAI(
-            api_key = aikey,
-            base_url = url,)
+        else :
+            self.__client = OpenAI(
+                api_key = aikey,
+                base_url = url)
         self.__max_history = max_dialogue_turns
         self.__turns = 0
         if system_prompt is None :
@@ -125,7 +117,7 @@ class aiSearcher(object) :
                 if "tool_calls" in tmpx.keys():
                     return {"role":"tool","tool_calls":tmpx["tool_calls"]}
                 else :
-                    output += json.loads(i)["message"]["content"]
+                    output += tmpx["content"]
             return {"role":"assistant","content":output}
         else :
             caht_info = self.__client.chat.completions.create(
@@ -227,7 +219,7 @@ class aiSearcher(object) :
                                    self._get_max_token(max_tokens), tools)
             if self.__channel == "ollama" :
                 finished = "tool_calls" if "tool_calls" in choice.message.model_dump().keys() else None
-            if self.__channel == "qwen" :
+            elif self.__channel == "qwen" :
                 finished = "tool_calls" if choice.message.tool_calls is not None else None
             else :
                 finished = choice.finish_reason
@@ -269,3 +261,27 @@ class aiSearcher(object) :
             printmd(result)
         else :
             return result
+    def generate(self, prompt:str, 
+                 system_prompt:str|None = None,
+                 temperature:float = 0.45,
+                 top_p:float = 1.0,
+                 max_tokens:int|str = "max",
+                 show:bool = True) -> str|None :
+        massages = [] if system_prompt is None else [{"role":"system","content":system_prompt}]
+        massages.append({"role":"user","content":prompt})
+        resp = self._chat_create(
+            self.__model, massages,
+            temperature,self._get_max_token(max_tokens),top_p,NOT_GIVEN
+        )
+        resp = resp.message.content
+        if show :
+            printmd(resp)
+        else :
+            return resp
+    def generate_image(self, prompt:str, 
+                       size:str = "1024x1024", step:int = 1,
+                       n:int = 1,
+                       img_model:str|None = None,
+                       img_base_url:str|None = None,
+                       save_path:str|Path|None = None) -> None :
+        pass

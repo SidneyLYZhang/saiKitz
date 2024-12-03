@@ -6,7 +6,8 @@ from io import BytesIO
 
 import base64
 
-__all__ = ["printmd","lastoflistdict","img_to_base64","base64_to_img"]
+__all__ = ["printmd","lastoflistdict","img_to_base64",
+           "base64_to_img","baseURL_optimize"]
 
 def printmd(string):
     """用于在Jupyter Notebook中打印Markdown格式的字符串"""
@@ -47,3 +48,24 @@ def base64_to_img(base64_str:str, save_path:str|Path) -> None :
     file_like = BytesIO(base64.b64decode(txtimg))
     img = Image.open(file_like)
     img.save(save_path)
+
+def baseURL_optimize(base_url:str|None) -> str :
+    """连接匹配"""
+    match base_url :
+        case "kimi" :
+            return "https://api.moonshot.cn/v1",base_url
+        case "qwen" :
+            return "https://dashscope.aliyuncs.com/compatible-mode/v1",base_url
+        case "ollama" :
+            return 'http://localhost:11434',base_url
+        case None :
+            return "https://api.moonshot.cn/v1","kimi"
+        case _ :
+            return base_url,"custom"
+
+def create_images(prompt:str, model:str, 
+                  base_url:str|None = None,
+                  api_key:str|None = None, 
+                  n:int = 1, size:str = "1024x1024",
+                  save_path:str|Path|None = None) :
+    pass
